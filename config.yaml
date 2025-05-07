@@ -1,0 +1,69 @@
+# Trading Strategy Paper Scraper Configuration
+# Scraping Parameters
+scraping:
+  max_papers: 50  # Maximum number of papers to scrape
+  rate_limit: 3   # Seconds between API requests to be polite
+  # Query topics for searching papers
+  query_topics:
+    - "quantitative trading strategies"
+    - "algorithmic trading"
+    - "momentum trading strategy"
+    - "mean reversion trading"
+    - "reinforcement learning trading"
+    - "machine learning trading strategy"
+  # Keywords to identify trading-relevant papers
+  trading_keywords:
+    - "trading"
+    - "strategy"
+    - "algorithmic"
+    - "quantitative"
+    - "momentum"
+    - "mean-reversion"
+    - "statistical arbitrage"
+    - "market making"
+    - "high-frequency"
+    - "portfolio optimization"
+    - "factor"
+    - "risk"
+    - "alpha"
+    - "machine learning"
+    - "reinforcement learning"
+  # ArXiv categories to search within
+  arxiv_categories:
+    - "q-fin.PM"  # Portfolio Management
+    - "q-fin.TR"  # Trading and Market Microstructure
+    - "q-fin.ST"  # Statistical Finance
+    - "cs.LG"     # Machine Learning
+    - "stat.ML"   # Machine Learning (Statistics)
+  test_mode: true  # Enable test mode
+  test_paper_limit: 1  # Process only one paper in test mode
+
+# Analysis Parameters
+analysis:
+  # Threshold for considering a strategy identified (number of keyword occurrences)
+  strategy_threshold: 2
+  # Number of top strategies to recommend
+  top_recommendations: 5
+
+# Generator Parameters
+generator:
+  # Default parameter ranges for strategies
+  parameters:
+    lookback_periods: [5, 10, 20, 50, 100]
+    buy_thresholds: [0.01, 0.02, 0.03, 0.04, 0.05]
+    sell_thresholds: [-0.05, -0.04, -0.03, -0.02, -0.01]
+    thresholds: [1.0, 1.5, 2.0, 2.5]
+  # Template selection weights (higher = more likely)
+  template_weights:
+    momentum: 1.0
+    mean_reversion: 1.0
+    reinforcement_learning: 0.8
+    transformer: 0.7
+
+# Output Settings
+output:
+  base_dir: "output"
+  papers_dir: "papers"
+  strategies_dir: "strategies"
+  visualizations_dir: "visualizations"
+  log_level: "INFO"  # DEBUG, INFO, WARNING, ERROR
