@@ -134,5 +134,3 @@ Enhance validation to verify strategies contain proper directional components
 Refine LLM prompts to prevent "strategy invention" from prediction papers
 Add comprehensive strategy comparison and performance visualization tools
 
-License
-MIT
