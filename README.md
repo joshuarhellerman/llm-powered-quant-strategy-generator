@@ -1,136 +1,138 @@
-# Trading Strategy Paper Scraper and Code Generator
+Trading Strategy Paper Scraper and LLM Code Generator
+Overview
+This project automates the extraction of trading strategies from academic papers and transforms them into executable Python code using Large Language Models (LLMs). It features a complete pipeline from research collection to strategy implementation and testing.
+Key Features
 
-## Overview
+Academic Paper Collection: Scrapes quantitative finance papers from arXiv
+LLM-Powered Strategy Extraction: Uses Claude models to identify and implement trading strategies
+Standardized Implementation: Generates code that follows a common BaseStrategy interface
+Backtesting Framework: Tests strategies against historical market data
+Visualization Tools: Generates performance charts and paper statistics
 
-This system automatically:
-1. Scrapes academic papers on trading strategies from arXiv
-2. Analyzes the papers to identify strategy types and techniques
-3. Generates executable Python code implementing these strategies
+Installation
+Prerequisites
 
-The focus is purely on discovering strategies in academic research and converting them to code - no deployment or live trading is included.
+Python 3.8 or higher
+Required packages:
 
-## Installation
+pandas
+numpy
+matplotlib
+yfinance
+requests
+beautifulsoup4
+nltk
+tqdm
+lxml
+pyyaml
+anthropic>=0.9.0
+tiktoken
+Setup
 
-### Prerequisites
-- Python 3.8 or higher
-- PyCharm (recommended)
+Clone the repository
+Create and activate a virtual environment:
+bashpython -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 
-### Setup
+Install dependencies:
+bashpip install -r requirements.txt
 
-1. Clone or download this repository
-2. Create a virtual environment:
-```bash
-python -m venv venv
-```
-3. Activate the virtual environment:
-   - Windows: `venv\Scripts\activate`
-   - macOS/Linux: `source venv/bin/activate`
-4. Install the dependencies:
-```bash
-pip install -r requirements.txt
-```
+Add your Anthropic API key to config.yaml
 
-## Usage
+Configuration
+The system uses config.yaml for configuration with the following main sections:
 
-### Basic Usage
+scraping: Define search parameters like topics, keywords, and categories
+llm: Configure Claude model, API keys, and token budget limits
+output: Specify directories for saving results
+analysis: Set thresholds for strategy identification and recommendation
 
-Run the system with default settings:
-```bash
-python main.py
-```
-
-This will:
-- Search arXiv for papers on quantitative trading strategies
-- Save paper details to `output/papers/`
-- Generate Python code for each strategy in `output/strategies/`
-
-### Command-line Options
-
-```bash
-python main.py --help
-```
-
+Usage
+Basic Usage
+Run the complete pipeline:
+bashpython main.py
+Command-line Options
+bashpython main.py --help
 Available options:
-- `--query-topics, -q`: Specific topics to search for (e.g., `"momentum trading" "reinforcement learning"`)
-- `--max-papers, -m`: Maximum number of papers to scrape (default: 20)
-- `--no-scrape, -n`: Skip scraping and use existing papers
-- `--output-dir, -o`: Custom output directory
 
-### Examples
+--config: Path to configuration file (default: config.yaml)
+--mode: Pipeline stage to run (choices: scrape, analyze, extract, test, all)
+--test: Run in test mode with limited papers
+--limit: Limit number of papers to process
+--dry-run: Simulate API calls without making actual requests
+--model: Claude model to use (haiku, sonnet, opus)
 
-Search for specific strategy types:
-```bash
-python main.py -q "momentum trading" "mean reversion" "reinforcement learning trading"
-```
-
-Process more papers:
-```bash
-python main.py -m 50
-```
-
-Use existing papers without re-scraping:
-```bash
-python main.py -n
-```
-
-## Project Structure
-
-```
+Examples
+Run only the paper scraping step:
+bashpython main.py --mode scrape
+Run in test mode with a specific model:
+bashpython main.py --test --model haiku
+Extract strategies from already scraped papers:
+bashpython main.py --mode extract --limit 5
+Project Structure
 trading_strategy_extractor/
 │
-├── requirements.txt
-├── README.md
-├── main.py
+├── main.py                  # Main entry point
+├── config.yaml              # Configuration file
+├── requirements.txt         # Dependencies
 │
-├── trading/
-│   ├── __init__.py
-│   ├── scraper.py          # Research paper scraper
-│   ├── generator.py        # Strategy code generator
-│   └── templates/          # Strategy templates included in generator.py
+├── trading/                 # Core modules
+│   ├── config_manager.py    # Configuration handling
+│   ├── scraper.py           # arXiv paper collection
+│   ├── analyzer.py          # Paper analysis and statistics
+│   ├── llm_service.py       # Claude API integration with token tracking
+│   ├── strategy_extractor.py # Strategy extraction and code generation
+│   ├── validation_service.py # Code validation and verification
+│   └── strategy_tester.py   # Backtesting framework
 │
-└── output/
-    ├── papers/             # Scraped paper data
-    └── strategies/         # Generated Python code
-```
+├── strategy_format/         # Strategy template structure
+│   ├── base_strategy.py     # BaseStrategy class definition
+│   └── __init__.py
+│
+└── output/                  # Generated files
+    ├── papers/              # Scraped papers and metadata
+    │   └── papers_YYYYMMDD/ # Daily paper archives
+    ├── strategies/          # Generated strategy implementations
+    │   └── llm_strategies/  # LLM-generated strategies
+    │       ├── overviews/   # Strategy overview JSONs
+    │       ├── implementations/ # Python implementation files
+    │       └── validation_reports/ # Validation results
+    ├── test_results/        # Backtest performance metrics
+    └── visualizations/      # Charts and analysis plots
+LLM Strategy Generation
+The system uses a two-stage approach to generate strategies:
 
-## Generated Strategy Code
+Strategy Extraction: Analyzes papers to extract key components:
 
-Each generated strategy file includes:
-- Original paper reference and metadata
-- Complete strategy implementation with standard methods:
-  - `fetch_data()`: Download price data using yfinance
-  - `_engineer_features()`: Create technical indicators
-  - `generate_signals()`: Core strategy logic from the paper
-  - `backtest()`: Simple backtesting functionality
-  - `plot_results()`: Visualization of backtest results
+Strategy name and core mechanism
+Technical indicators and parameters
+Mathematical formulas
+Asset classes and market conditions
+Risk management rules
 
-## Working with Generated Strategies
 
-You can immediately run any generated strategy file:
-```bash
-python output/strategies/SomeStrategyName.py
-```
+Code Generation: Creates Python implementation that:
 
-Each strategy includes example code that will:
-1. Create an instance of the strategy
-2. Download S&P 500 data (ticker: SPY)
-3. Run a backtest
-4. Display performance metrics and charts
+Inherits from BaseStrategy
+Implements required interface methods
+Calculates indicators and generates signals
+Handles preprocessing and validation
 
-## Customization
 
-To add new strategy templates:
-1. Edit `trading/generator.py`
-2. Add new template methods to the `_load_templates()` function
-3. Update the `_determine_template()` method to select your new template type
 
-## Limitations
+Known Limitations
 
-- The system uses basic pattern matching to identify strategy types
-- Generated code is based on templates, not detailed analysis of paper methodology
-- Advanced strategies may require manual refinement after generation
-- No risk management beyond basic position sizing is implemented
+Research Interpretation: The system sometimes misinterprets research papers about prediction techniques as trading strategies
+Strategy Directionality: Generated strategies may lack proper directional components (buy/sell logic)
+Paper Selection: Academic papers often focus on forecasting methods rather than complete trading strategies
+Model Constraints: Strategy quality depends heavily on the capabilities of the selected Claude model
 
-## License
+Next Steps
 
+Improve paper selection to better identify true trading strategy research
+Enhance validation to verify strategies contain proper directional components
+Refine LLM prompts to prevent "strategy invention" from prediction papers
+Add comprehensive strategy comparison and performance visualization tools
+
+License
 MIT
