@@ -1,0 +1,10 @@
+[
+  {
+    "id": "2407.16780v1",
+    "title": "The Hybrid Forecast of S&P 500 Volatility ensembled from VIX, GARCH and   LSTM models",
+    "primary_strategy": "unknown",
+    "primary_asset": "options",
+    "primary_technique": "deep_learning",
+    "score": 13
+  }
+]

@@ -1,0 +1,7 @@
+{
+  "input_tokens": 4402,
+  "output_tokens": 3639,
+  "total_tokens": 8041,
+  "estimated_cost": 0.022597,
+  "model": "claude-3-5-haiku-20241022"
+}

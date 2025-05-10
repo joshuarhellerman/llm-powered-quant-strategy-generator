@@ -1,0 +1,29 @@
+{
+  "is_valid": false,
+  "issues": [
+    "No signal generation method found (e.g., generate_signals, backtest)",
+    "Skipped execution validation due to syntax or class structure issues"
+  ],
+  "details": {
+    "syntax": {
+      "valid": true,
+      "issues": []
+    },
+    "imports": {
+      "valid": true,
+      "issues": []
+    },
+    "class_structure": {
+      "valid": false,
+      "issues": [
+        "No signal generation method found (e.g., generate_signals, backtest)"
+      ]
+    },
+    "execution": {
+      "valid": false,
+      "issues": [
+        "Skipped execution validation due to syntax or class structure issues"
+      ]
+    }
+  }
+}

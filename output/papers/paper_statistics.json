@@ -1,0 +1,17 @@
+{
+  "strategy_counts": {
+    "unknown": 1
+  },
+  "asset_counts": {
+    "options": 1
+  },
+  "ml_counts": {
+    "deep_learning": 1
+  },
+  "timeframe_counts": {
+    "position": 1
+  },
+  "years": {
+    "2024": 1
+  }
+}

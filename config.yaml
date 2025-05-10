@@ -1,16 +1,19 @@
 # Trading Strategy Paper Scraper Configuration
+
 # Scraping Parameters
 scraping:
-  max_papers: 50  # Maximum number of papers to scrape
-  rate_limit: 3   # Seconds between API requests to be polite
+  max_papers: 50      # Maximum number of papers to scrape
+  rate_limit: 3       # Seconds between API requests to be polite
+
   # Query topics for searching papers
   query_topics:
     - "quantitative trading strategies"
     - "algorithmic trading"
-    - "momentum trading strategy"
-    - "mean reversion trading"
-    - "reinforcement learning trading"
-    - "machine learning trading strategy"
+    # - "momentum trading strategy"
+    # - "mean reversion trading"
+    # - "reinforcement learning trading"
+    # - "machine learning trading strategy"
+
   # Keywords to identify trading-relevant papers
   trading_keywords:
     - "trading"
@@ -28,15 +31,17 @@ scraping:
     - "alpha"
     - "machine learning"
     - "reinforcement learning"
+
   # ArXiv categories to search within
   arxiv_categories:
-    - "q-fin.PM"  # Portfolio Management
-    - "q-fin.TR"  # Trading and Market Microstructure
-    - "q-fin.ST"  # Statistical Finance
-    - "cs.LG"     # Machine Learning
-    - "stat.ML"   # Machine Learning (Statistics)
-  test_mode: true  # Enable test mode
-  test_paper_limit: 1  # Process only one paper in test mode
+    - "q-fin.PM"    # Portfolio Management
+    - "q-fin.TR"    # Trading and Market Microstructure
+    - "q-fin.ST"    # Statistical Finance
+    - "cs.LG"       # Machine Learning
+    - "stat.ML"     # Machine Learning (Statistics)
+
+  test_mode: true    # Enable test mode
+  test_paper_limit: 1   # Process only one paper in test mode
 
 # Analysis Parameters
 analysis:
@@ -53,6 +58,7 @@ generator:
     buy_thresholds: [0.01, 0.02, 0.03, 0.04, 0.05]
     sell_thresholds: [-0.05, -0.04, -0.03, -0.02, -0.01]
     thresholds: [1.0, 1.5, 2.0, 2.5]
+
   # Template selection weights (higher = more likely)
   template_weights:
     momentum: 1.0
@@ -60,10 +66,52 @@ generator:
     reinforcement_learning: 0.8
     transformer: 0.7
 
+# LLM Service Configuration
+llm:
+  # Primary LLM provider to use
+  primary_provider: "claude"
+  # Fallback providers in order of preference
+  fallback_providers: ["llama3"]
+  # Claude model selection - UPDATED to use a valid model
+  claude_model: "claude-3-opus-20240229"
+  # Dry run mode - set to true to simulate API calls without making them
+  dry_run: false
+  # API keys configuration
+  api_keys:
+    claude: "your_api_key_here"  # Replace with your actual API key
+
+  # Cache directory for LLM responses
+  cache_dir: "cache/llm_responses"
+
+  # Rate limiting configuration
+  rate_limits:
+    claude:
+      requests_per_minute: 5   # Reduced from 10 to be more conservative
+    llama3:
+      requests_per_minute: 10
+
+  # Token budget limits (to prevent unexpected costs)
+  token_budget:
+    max_input_tokens: 10000
+    max_output_tokens: 4000
+    max_cost_per_call: 0.10   # Maximum cost per API call in USD
+    total_budget: 5.00        # Total budget for the entire run in USD
+
+# Local model paths (for fallback providers)
+  local_models:
+    llama3_path: ""    # Path to local Llama 3 model if available
+
+# Strategy extraction parameters
+extraction:
+  max_tokens: 4000
+  use_cache: false   # Changed to false to force new generations
+  prompt_templates_dir: "prompts"
+  system_prompt: "You are a quantitative finance expert specializing in extracting trading strategies from academic papers and converting them to practical implementations."
+
 # Output Settings
 output:
   base_dir: "output"
   papers_dir: "papers"
   strategies_dir: "strategies"
   visualizations_dir: "visualizations"
-  log_level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  log_level: "INFO"   # DEBUG, INFO, WARNING, ERROR

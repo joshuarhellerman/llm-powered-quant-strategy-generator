@@ -19,6 +19,27 @@
     "source": "arxiv",
     "strategy_type": "reinforcement learning",
     "asset_class": null,
-    "ml_technique": "deep learning"
+    "ml_technique": "deep learning",
+    "primary_strategy": "unknown",
+    "strategies": [],
+    "primary_asset": "options",
+    "assets": [
+      "equity",
+      "options"
+    ],
+    "primary_technique": "deep_learning",
+    "techniques": [
+      "deep_learning"
+    ],
+    "primary_timeframe": "position",
+    "timeframes": [
+      "intraday",
+      "position"
+    ],
+    "technical_indicators": [],
+    "parameters": {
+      "lookback_periods": [],
+      "thresholds": []
+    }
   }
 ]
