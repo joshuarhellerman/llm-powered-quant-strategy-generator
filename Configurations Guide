@@ -1,0 +1,262 @@
+# Cost Control Usage Guide
+
+## 🎯 Quick Configuration Examples
+
+### **Development Mode (Cheap)**
+```yaml
+# config.yaml
+llm:
+  implementation:
+    enabled: true
+    test_mode_skip: true        # Skip implementation in test mode
+    max_cost_per_implementation: 0.05
+  token_budget:
+    total_budget: 1.00          # $1 total budget
+
+test_mode:
+  enabled: true                 # Always use test mode
+```
+
+**Command:**
+```bash
+python main.py --test --mode all    # Will skip implementation, ~$0.01 per paper
+```
+
+### **Research Mode (Moderate Cost)**
+```yaml
+# config.yaml
+llm:
+  implementation:
+    enabled: true
+    test_mode_skip: false       # Generate implementation even in test mode
+    max_cost_per_implementation: 0.20
+  token_budget:
+    total_budget: 5.00          # $5 total budget
+```
+
+**Command:**
+```bash
+python main.py --test --mode all --limit 5    # Will generate full strategies, ~$0.05 per paper
+```
+
+### **Production Mode (Full Quality)**
+```yaml
+# config.yaml
+llm:
+  implementation:
+    enabled: true
+    test_mode_skip: false
+    max_cost_per_implementation: 0.50
+  token_budget:
+    total_budget: 20.00         # $20 total budget
+
+test_mode:
+  enabled: false                # Use full mode
+```
+
+**Command:**
+```bash
+python main.py --mode all --limit 10    # Full quality, ~$0.10 per paper
+```
+
+## 💰 Cost Control Options
+
+### **1. Global Implementation Control**
+```yaml
+llm:
+  implementation:
+    enabled: false              # Disable ALL implementation generation
+```
+
+### **2. Test Mode Control**
+```yaml
+llm:
+  implementation:
+    test_mode_skip: true        # Skip implementation ONLY in test mode
+    # But allow in production mode
+```
+
+### **3. Per-Strategy Cost Limits**
+```yaml
+llm:
+  implementation:
+    max_cost_per_implementation: 0.10    # Skip if estimated cost > $0.10
+```
+
+### **4. Total Budget Control**
+```yaml
+llm:
+  token_budget:
+    total_budget: 5.00          # Stop when total cost reaches $5
+    max_cost_per_call: 0.20     # Skip individual calls > $0.20
+```
+
+## 🚀 Command Line Usage
+
+### **Overview Only (Cheapest ~$0.005 per paper)**
+```bash
+# Extract strategy concepts only, no code generation
+python main.py --test --mode extract --limit 5
+```
+
+**What you get:**
+- ✅ Strategy analysis and concepts
+- ✅ Key indicators and formulas
+- ❌ No Python implementation
+- 💰 Cost: ~$0.005 per paper
+
+### **Full Implementation (More Expensive ~$0.02-0.10 per paper)**
+```bash
+# Generate complete Python strategies
+python main.py --mode extract --limit 3
+```
+
+**What you get:**
+- ✅ Strategy analysis and concepts
+- ✅ Complete Python implementation
+- ✅ Validated BaseStrategy code
+- 💰 Cost: ~$0.02-0.10 per paper
+
+### **Mixed Mode: Overview + Selective Implementation**
+```yaml
+# config.yaml - smart cost control
+llm:
+  implementation:
+    test_mode_skip: true        # Skip in test mode
+    max_cost_per_implementation: 0.05    # Only simple strategies
+```
+
+```bash
+# Extract many overviews, implement only simple ones
+python main.py --test --mode extract --limit 10
+```
+
+## 📊 Cost Monitoring
+
+### **Check Budget Usage**
+The system logs cost information:
+```
+Token usage: 1772 tokens, cost: $0.0045
+Budget remaining: $4.9955 / $5.00 (99.91%)
+```
+
+### **Cost Breakdown**
+- **Strategy Extraction**: ~$0.005 per paper
+- **Implementation Generation**: ~$0.02-0.05 per paper
+- **Code Refinement**: ~$0.01-0.03 per paper
+- **Validation**: Free (local processing)
+
+## ⚙️ Fine-Tuned Control
+
+### **Scenario 1: Research Discovery**
+*Goal: Find interesting strategies quickly and cheaply*
+
+```yaml
+llm:
+  implementation:
+    enabled: true
+    test_mode_skip: true        # Only extract concepts
+  token_budget:
+    total_budget: 2.00
+```
+
+```bash
+python main.py --test --mode extract --limit 20    # $0.10 total
+```
+
+### **Scenario 2: Strategy Development**
+*Goal: Generate 2-3 high-quality implementations*
+
+```yaml
+llm:
+  implementation:
+    enabled: true
+    test_mode_skip: false       # Generate code
+    max_cost_per_implementation: 0.15
+  token_budget:
+    total_budget: 1.00
+```
+
+```bash
+python main.py --test --mode all --limit 3    # ~$0.30 total
+```
+
+### **Scenario 3: Production Research**
+*Goal: Complete analysis with full implementations*
+
+```yaml
+llm:
+  implementation:
+    enabled: true
+    test_mode_skip: false
+    max_cost_per_implementation: 0.50
+  token_budget:
+    total_budget: 10.00
+```
+
+```bash
+python main.py --mode all --limit 10    # ~$2-5 total
+```
+
+## 🎛️ Advanced Controls
+
+### **Dynamic Cost Control**
+```yaml
+llm:
+  implementation:
+    require_confirmation: true   # Prompt before expensive calls
+
+  costs:
+    extraction_max: 0.02        # Skip extraction if > $0.02
+    implementation_max: 0.10    # Skip implementation if > $0.10
+    refinement_max: 0.05        # Skip refinement if > $0.05
+```
+
+### **Quality vs Cost Trade-offs**
+```yaml
+strategy_extraction:
+  max_refinement_attempts: 1    # Fewer refinement attempts = lower cost
+  require_validation: false     # Skip validation = faster + cheaper
+  fallback_on_error: true       # Use fallback instead of retrying
+```
+
+## 💡 Best Practices
+
+### **Start Cheap, Scale Up**
+```bash
+# 1. Discover strategies (cheap)
+python main.py --test --mode extract --limit 10    # $0.05
+
+# 2. Implement promising ones (moderate)
+python main.py --mode extract --limit 3           # $0.15
+
+# 3. Full pipeline on best (expensive)
+python main.py --mode all --limit 1               # $0.20
+```
+
+### **Use Test Mode Effectively**
+```yaml
+# Development config
+test_mode:
+  enabled: true
+llm:
+  implementation:
+    test_mode_skip: true        # Cheap during development
+
+# When ready for implementation:
+# python main.py --no-test --mode extract --limit 1
+```
+
+### **Budget Monitoring**
+```yaml
+llm:
+  token_budget:
+    total_budget: 5.00
+    warn_threshold: 0.05        # Warn on calls > $0.05
+
+monitoring:
+  cost_alerts: true             # Alert when approaching budget
+  save_token_reports: true      # Track spending over time
+```
+
+This gives you complete control over when to spend money on implementation vs when to just get the strategy concepts!

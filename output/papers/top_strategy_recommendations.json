@@ -1,10 +1,26 @@
 [
   {
+    "id": "2302.10175v1",
+    "title": "Spatio-Temporal Momentum: Jointly Learning Time-Series and   Cross-Sectional Strategies",
+    "primary_strategy": "momentum",
+    "primary_asset": "equity",
+    "primary_technique": "deep_learning",
+    "score": 23
+  },
+  {
     "id": "2407.16780v1",
     "title": "The Hybrid Forecast of S&P 500 Volatility ensembled from VIX, GARCH and   LSTM models",
     "primary_strategy": "unknown",
     "primary_asset": "options",
     "primary_technique": "deep_learning",
     "score": 13
+  },
+  {
+    "id": "2305.06704v3",
+    "title": "Robust Detection of Lead-Lag Relationships in Lagged Multi-Factor Models",
+    "primary_strategy": "unknown",
+    "primary_asset": "equity",
+    "primary_technique": "unknown",
+    "score": 5
   }
 ]

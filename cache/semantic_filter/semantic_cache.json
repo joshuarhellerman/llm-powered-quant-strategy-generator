@@ -1,0 +1,27 @@
+{
+  "2302.10175v1": {
+    "score": 0.6,
+    "analysis": {
+      "strategy_score": 0.6,
+      "has_entry_rules": true,
+      "has_exit_rules": false,
+      "has_parameters": true,
+      "has_position_sizing": false,
+      "has_backtest": true,
+      "is_prediction_only": false,
+      "summary": "Proposes a neural network approach to generate trading signals across multiple assets using spatio-temporal momentum, but lacks complete implementation details",
+      "key_elements": [
+        "Neural network signal generation",
+        "Cross-sectional and time-series momentum features",
+        "Least absolute shrinkage and turnover regularization",
+        "Backtest across multiple asset classes"
+      ],
+      "missing_elements": [
+        "Explicit exit rules",
+        "Detailed position sizing methodology",
+        "Precise trading signal thresholds",
+        "Specific risk management guidelines"
+      ]
+    }
+  }
+}

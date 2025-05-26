@@ -1,20 +1,16 @@
-# Trading Strategy Paper Scraper Configuration
+# Complete updated config.yaml with implementation cost controls
 
-# Scraping Parameters
+# Scraping configuration
 scraping:
-  max_papers: 50      # Maximum number of papers to scrape
-  rate_limit: 3       # Seconds between API requests to be polite
-
-  # Query topics for searching papers
+  max_papers: 50
+  rate_limit: 3
   query_topics:
     - "quantitative trading strategies"
     - "algorithmic trading"
-    # - "momentum trading strategy"
-    # - "mean reversion trading"
-    # - "reinforcement learning trading"
-    # - "machine learning trading strategy"
-
-  # Keywords to identify trading-relevant papers
+    - "momentum trading strategy"
+    - "mean reversion trading"
+    - "reinforcement learning trading"
+    - "machine learning trading strategy"
   trading_keywords:
     - "trading"
     - "strategy"
@@ -31,87 +27,113 @@ scraping:
     - "alpha"
     - "machine learning"
     - "reinforcement learning"
-
-  # ArXiv categories to search within
   arxiv_categories:
-    - "q-fin.PM"    # Portfolio Management
-    - "q-fin.TR"    # Trading and Market Microstructure
-    - "q-fin.ST"    # Statistical Finance
-    - "cs.LG"       # Machine Learning
-    - "stat.ML"     # Machine Learning (Statistics)
+    - "q-fin.PM"
+    - "q-fin.TR"
+    - "q-fin.ST"
+    - "cs.LG"
+    - "stat.ML"
 
-  test_mode: true    # Enable test mode
-  test_paper_limit: 1   # Process only one paper in test mode
+  # New ArXiv retry settings
+  arxiv_max_retries: 5
+  arxiv_initial_backoff: 1
+  arxiv_max_backoff: 60
 
-# Analysis Parameters
+# Analysis configuration
 analysis:
-  # Threshold for considering a strategy identified (number of keyword occurrences)
   strategy_threshold: 2
-  # Number of top strategies to recommend
   top_recommendations: 5
 
-# Generator Parameters
+# Generator configuration
 generator:
-  # Default parameter ranges for strategies
   parameters:
     lookback_periods: [5, 10, 20, 50, 100]
     buy_thresholds: [0.01, 0.02, 0.03, 0.04, 0.05]
     sell_thresholds: [-0.05, -0.04, -0.03, -0.02, -0.01]
     thresholds: [1.0, 1.5, 2.0, 2.5]
-
-  # Template selection weights (higher = more likely)
   template_weights:
     momentum: 1.0
     mean_reversion: 1.0
     reinforcement_learning: 0.8
     transformer: 0.7
 
-# LLM Service Configuration
-llm:
-  # Primary LLM provider to use
-  primary_provider: "claude"
-  # Fallback providers in order of preference
-  fallback_providers: ["llama3"]
-  # Claude model selection - UPDATED to use a valid model
-  claude_model: "claude-3-opus-20240229"
-  # Dry run mode - set to true to simulate API calls without making them
-  dry_run: false
-  # API keys configuration
-  api_keys:
-    claude: "your_api_key_here"  # Replace with your actual API key
-
-  # Cache directory for LLM responses
-  cache_dir: "cache/llm_responses"
-
-  # Rate limiting configuration
-  rate_limits:
-    claude:
-      requests_per_minute: 5   # Reduced from 10 to be more conservative
-    llama3:
-      requests_per_minute: 10
-
-  # Token budget limits (to prevent unexpected costs)
-  token_budget:
-    max_input_tokens: 10000
-    max_output_tokens: 4000
-    max_cost_per_call: 0.10   # Maximum cost per API call in USD
-    total_budget: 5.00        # Total budget for the entire run in USD
-
-# Local model paths (for fallback providers)
-  local_models:
-    llama3_path: ""    # Path to local Llama 3 model if available
-
-# Strategy extraction parameters
-extraction:
-  max_tokens: 4000
-  use_cache: false   # Changed to false to force new generations
-  prompt_templates_dir: "prompts"
-  system_prompt: "You are a quantitative finance expert specializing in extracting trading strategies from academic papers and converting them to practical implementations."
-
-# Output Settings
+# Output configuration
 output:
   base_dir: "output"
   papers_dir: "papers"
   strategies_dir: "strategies"
   visualizations_dir: "visualizations"
-  log_level: "INFO"   # DEBUG, INFO, WARNING, ERROR
+  log_level: "INFO"
+
+# Test mode configuration
+test_mode:
+  enabled: true                    # Master switch for test mode
+  ensure_success: true             # Keep trying until strategy passes or limit reached
+  lower_thresholds: true           # Automatically lower thresholds in test mode
+  max_attempts: 3                  # Maximum attempts to find suitable papers
+  papers_per_attempt: 3            # Papers to retrieve per attempt
+  synthetic_fallback: false        # Use synthetic papers if no real papers pass
+  limit: 3                         # Maximum number of papers to process
+
+# Paper selection configuration
+paper_selection:
+  output_dir: "output/papers/selected"
+  paper_selector:
+    basic_threshold: 0.3           # Normal threshold for basic filter
+    semantic_threshold: 0.6        # Normal threshold for semantic filter
+    final_threshold: 0.7           # Normal threshold for final scoring
+    semantic_batch_size: 10
+  test_thresholds:                 # Thresholds to use in test mode
+    basic_threshold: 0.01          # Very low threshold for test mode
+    semantic_threshold: 0.01       # Very low threshold for test mode
+    final_threshold: 0.01          # Very low threshold for test mode
+  max_papers: 50
+
+# LLM configuration with cost controls
+llm:
+  primary_provider: "claude"
+  claude_model: "claude-3-5-haiku-20241022"  # Claude model to use
+  cache_dir: "output/llm_cache"
+  dry_run: false                   # Set to true to avoid making actual API calls
+
+  # Implementation cost controls
+  implementation:
+    enabled: true                  # Enable/disable strategy implementation generation
+    test_mode_skip: false          # Skip implementation in test mode (saves money)
+    max_cost_per_implementation: 0.50  # Max $ per implementation (safety limit)
+    require_confirmation: false    # Prompt before expensive calls
+
+  # Token budget controls
+  token_budget:
+    max_cost_per_call: 0.10       # Maximum cost per individual API call
+    total_budget: 1.00            # Total budget for the entire run
+    warn_threshold: 0.05          # Warn when a call exceeds this cost
+
+  # Strategy extraction vs implementation costs
+  costs:
+    extraction_max: 0.02          # Max cost for strategy extraction (~$0.005 typical)
+    implementation_max: 0.10      # Max cost for implementation (~$0.02-0.05 typical)
+    refinement_max: 0.05          # Max cost for fixing implementation issues
+
+# Strategy extraction configuration
+strategy_extraction:
+  # What to extract (affects cost)
+  extract_overview: true          # Extract strategy overview (~$0.005)
+  extract_implementation: true    # Generate full code (~$0.02-0.05)
+  extract_refinement: true        # Fix issues in generated code (~$0.01-0.03)
+
+  # Cost-saving options
+  use_cache: true                 # Use cached responses when possible
+  skip_in_test_mode: false        # Skip implementation in test mode
+  fallback_on_error: true         # Use fallback strategy if generation fails
+
+  # Quality vs cost trade-offs
+  max_refinement_attempts: 2      # How many times to try fixing issues
+  require_validation: true        # Validate generated code (recommended)
+
+# Performance and monitoring
+monitoring:
+  track_costs: true               # Track and log API costs
+  cost_alerts: true               # Alert when approaching budget limits
+  performance_logging: true       # Log performance metrics
+  save_token_reports: true        # Save detailed token usage reports

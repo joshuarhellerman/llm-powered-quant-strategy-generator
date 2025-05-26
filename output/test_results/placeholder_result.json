@@ -1,0 +1,9 @@
+{
+  "strategy_name": "FallbackMovingAverageStrategy",
+  "test_date": "2024-01-01",
+  "total_return": 0.05,
+  "sharpe_ratio": 0.5,
+  "max_drawdown": 0.1,
+  "num_trades": 10,
+  "status": "completed"
+}

@@ -17,6 +17,9 @@ class ConfigManager:
         self.config = self._load_config()
         self._setup_logging()
 
+        # Ensure all required config sections exist
+        self.update_config_defaults()
+
     def _load_config(self):
         """Load configuration from YAML file"""
         try:
@@ -109,6 +112,36 @@ class ConfigManager:
                 "strategies_dir": "strategies",
                 "visualizations_dir": "visualizations",
                 "log_level": "INFO"
+            },
+            "test_mode": {
+                "enabled": False,
+                "ensure_success": True,
+                "lower_thresholds": True,
+                "max_attempts": 3,
+                "papers_per_attempt": 3,
+                "synthetic_fallback": True,
+                "limit": 3
+            },
+            "paper_selection": {
+                "output_dir": "output/papers/selected",
+                "paper_selector": {
+                    "basic_threshold": 0.3,
+                    "semantic_threshold": 0.6,
+                    "final_threshold": 0.7,
+                    "semantic_batch_size": 10
+                },
+                "test_thresholds": {
+                    "basic_threshold": 0.1,
+                    "semantic_threshold": 0.2,
+                    "final_threshold": 0.3
+                },
+                "max_papers": 50
+            },
+            "llm": {
+                "primary_provider": "claude",
+                "claude_model": "claude-3-5-haiku-20241022",
+                "cache_dir": "output/llm_cache",
+                "dry_run": False
             }
         }
 
@@ -139,6 +172,23 @@ class ConfigManager:
         """Get output configuration"""
         return self.config["output"]
 
+    def get_test_config(self):
+        """Get test mode configuration"""
+        test_config = self.config.get('test_mode', {})
+        if not test_config:
+            # Create default test configuration
+            test_config = {
+                'enabled': False,
+                'ensure_success': True,
+                'lower_thresholds': True,
+                'max_attempts': 3,
+                'papers_per_attempt': 3,
+                'synthetic_fallback': True,
+                'limit': 3
+            }
+            self.config['test_mode'] = test_config
+        return test_config
+
     def get_output_dirs(self):
         """Get output directories"""
         output_config = self.get_output_config()
@@ -167,3 +217,44 @@ class ConfigManager:
             yaml.dump(self.config, f, default_flow_style=False)
 
         return self.config
+
+    def update_config_defaults(self):
+        """Ensure all required config sections exist with defaults"""
+        # Ensure test_mode section exists
+        if 'test_mode' not in self.config:
+            self.config['test_mode'] = {
+                'enabled': False,
+                'ensure_success': True,
+                'lower_thresholds': True,
+                'max_attempts': 3,
+                'papers_per_attempt': 3,
+                'synthetic_fallback': True,
+                'limit': 3
+            }
+
+        # Ensure paper_selection section exists
+        if 'paper_selection' not in self.config:
+            self.config['paper_selection'] = {
+                'output_dir': 'output/papers/selected',
+                'paper_selector': {
+                    'basic_threshold': 0.3,
+                    'semantic_threshold': 0.6,
+                    'final_threshold': 0.7,
+                    'semantic_batch_size': 10
+                },
+                'test_thresholds': {
+                    'basic_threshold': 0.1,
+                    'semantic_threshold': 0.2,
+                    'final_threshold': 0.3
+                },
+                'max_papers': 50
+            }
+
+        # Ensure llm section exists
+        if 'llm' not in self.config:
+            self.config['llm'] = {
+                'primary_provider': 'claude',
+                'claude_model': 'claude-3-5-haiku-20241022',
+                'cache_dir': 'output/llm_cache',
+                'dry_run': False
+            }

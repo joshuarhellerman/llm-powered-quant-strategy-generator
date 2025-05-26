@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+trading/__pycache__/
+strategy_format/__pycache__/
+trading/paper_selection/__pycache__/

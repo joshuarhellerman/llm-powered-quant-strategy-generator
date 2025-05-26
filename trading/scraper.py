@@ -5,7 +5,9 @@ Research Scraper module for finding trading strategies in academic papers
 import json
 import time
 import os
+import random
 import requests
+from requests.exceptions import RequestException, SSLError
 import logging
 import warnings
 from datetime import datetime
@@ -16,13 +18,65 @@ import matplotlib.pyplot as plt
 warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
 
 
+def make_arxiv_request_with_backoff(url, params, max_retries=5, initial_backoff=1, max_backoff=60, logger=None):
+    """
+    Makes a request to the ArXiv API with exponential backoff retry logic
+
+    Args:
+        url (str): The URL to request
+        params (dict): Request parameters
+        max_retries (int): Maximum number of retry attempts
+        initial_backoff (float): Initial backoff time in seconds
+        max_backoff (float): Maximum backoff time in seconds
+        logger (logging.Logger): Logger instance
+
+    Returns:
+        requests.Response: The response object if successful
+
+    Raises:
+        Exception: If all retry attempts fail
+    """
+    retries = 0
+    backoff = initial_backoff
+
+    while retries < max_retries:
+        try:
+            if logger:
+                logger.debug(f"Making request to ArXiv API: {url} with params: {params}")
+
+            response = requests.get(url, params=params, timeout=30)  # Add a timeout
+            response.raise_for_status()  # Raise exception for non-200 status codes
+            return response
+        except (SSLError, RequestException) as e:
+            retries += 1
+            if retries >= max_retries:
+                if logger:
+                    logger.error(f"Request error after {retries} retries: {e}")
+                raise
+
+            # Calculate exponential backoff with jitter
+            jitter = random.uniform(0, 0.1 * backoff)
+            sleep_time = backoff + jitter
+
+            if logger:
+                logger.warning(f"Error connecting to ArXiv (attempt {retries}/{max_retries}): {e}")
+                logger.info(f"Retrying in {sleep_time:.2f} seconds...")
+
+            time.sleep(sleep_time)
+
+            # Exponential increase for next backoff, capped at max_backoff
+            backoff = min(backoff * 2, max_backoff)
+
+
 class ResearchScraper:
     """
     Scrapes research papers from arXiv to find trading strategies
     """
 
     def __init__(self, query_topics=None, max_papers=50, output_dir="output/papers",
-                 trading_keywords=None, arxiv_categories=None, rate_limit=3):
+                trading_keywords=None, arxiv_categories=None, rate_limit=3,
+                arxiv_max_retries=5, arxiv_initial_backoff=1, arxiv_max_backoff=60,
+                test_mode=False):
         """
         Initialize the scraper with configuration settings
 
@@ -33,6 +87,10 @@ class ResearchScraper:
             trading_keywords (list): Keywords to filter relevant papers
             arxiv_categories (list): arXiv categories to filter by
             rate_limit (int): Seconds to wait between API calls
+            arxiv_max_retries (int): Maximum retries for ArXiv API calls
+            arxiv_initial_backoff (float): Initial backoff time in seconds
+            arxiv_max_backoff (float): Maximum backoff time in seconds
+            test_mode (bool): Whether running in test mode
         """
         self.query_topics = query_topics or [
             "quantitative trading strategies",
@@ -61,6 +119,14 @@ class ResearchScraper:
             "alpha", "machine learning", "reinforcement learning"
         ]
 
+        # Add the retry configuration
+        self.arxiv_max_retries = arxiv_max_retries
+        self.arxiv_initial_backoff = arxiv_initial_backoff
+        self.arxiv_max_backoff = arxiv_max_backoff
+
+        # Test mode setting
+        self.test_mode = test_mode
+
         # Setup logging
         self.logger = logging.getLogger(__name__)
 
@@ -69,7 +135,7 @@ class ResearchScraper:
 
     def search_arxiv(self, query, max_results=50):
         """
-        Search arXiv for papers matching the query
+        Search arXiv for papers matching the query with retry logic
 
         Args:
             query (str): Search query for arXiv
@@ -100,10 +166,17 @@ class ResearchScraper:
         self.logger.debug(f"Full search query: {search_query}")
 
         try:
-            response = requests.get(base_url, params=params, timeout=30)
-            response.raise_for_status()  # Raise exception for HTTP errors
-        except requests.exceptions.RequestException as e:
-            self.logger.error(f"Error searching arXiv: {e}")
+            # Use exponential backoff retry for the request
+            response = make_arxiv_request_with_backoff(
+                base_url,
+                params,
+                max_retries=self.arxiv_max_retries,
+                initial_backoff=self.arxiv_initial_backoff,
+                max_backoff=self.arxiv_max_backoff,
+                logger=self.logger
+            )
+        except Exception as e:
+            self.logger.error(f"Error searching arXiv after multiple retries: {e}")
             return []
 
         # Parse the XML response using html.parser which is more forgiving

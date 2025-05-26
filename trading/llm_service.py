@@ -9,11 +9,19 @@ import time
 import logging
 import requests
 import re
-import tiktoken  # For token counting
-from typing import Dict, List, Any, Optional, Union
-import anthropic
 import importlib.util
+from typing import Dict, List, Any, Optional, Union
 
+# This helps avoid issues with importing tiktoken
+TIKTOKEN_AVAILABLE = False
+try:
+    import tiktoken
+    TIKTOKEN_AVAILABLE = True
+except ImportError:
+    pass
+except Exception as e:
+    print(f"Error during tiktoken import: {e}")
+    pass
 
 class LLMService:
     """
@@ -41,22 +49,22 @@ class LLMService:
 
         # Set up the Claude model - use Haiku by default for cost efficiency
         # Get the model from config, or use a valid default
-        self.claude_model = self.config.get("claude_model", "claude-3-7-sonnet-20250219")
+        self.claude_model = self.config.get("claude_model", "claude-3-5-haiku-20241022")
         self.logger.info(f"Using Claude model: {self.claude_model}")
 
         # Token and cost estimation parameters
         self.model_costs = {
-            "claude-3-5-haiku-20241022": {"input": 1.00, "output": 5.00},   # $1.00/$5.00 per million tokens
-            "claude-3-opus-20240229": {"input": 15.00, "output": 75.00},    # $15.00/$75.00 per million tokens
-            "claude-3-7-sonnet-20250219": {"input": 3.00, "output": 15.00}  # $3.00/$15.00 per million tokens
+            "claude-3-5-haiku-20241022": {"input": 1.00, "output": 5.00},  # $1.00/$5.00 per million tokens
+            "claude-3-opus-20240229": {"input": 15.00, "output": 75.00},  # $15.00/$75.00 per million tokens
+            "claude-3-5-sonnet-20241022": {"input": 3.00, "output": 15.00}  # $3.00/$15.00 per million tokens
         }
 
-        # Setup API keys from config or environment variables
-        self.api_keys = self.config.get("api_keys", {})
-        if not self.api_keys.get("claude") and os.environ.get("ANTHROPIC_API_KEY"):
-            self.api_keys["claude"] = os.environ.get("ANTHROPIC_API_KEY")
+        # Initialize API keys
+        self.api_keys = {}
+        self._setup_api_keys()
 
         # Setup clients
+        self.clients = {}
         self._setup_clients()
 
         # Setup cache
@@ -76,71 +84,134 @@ class LLMService:
             "estimated_cost": 0.0
         }
 
-        # Set up tokenizer for counting
-        try:
-            self.tokenizer = tiktoken.get_encoding("cl100k_base")  # Claude uses cl100k_base
-            self.logger.info("Initialized tiktoken for token counting")
-        except:
-            self.logger.warning("Failed to initialize tiktoken. Token counts will be estimated.")
-            self.tokenizer = None
+        # Set tiktoken availability flag
+        self.tiktoken_available = TIKTOKEN_AVAILABLE
+
+    def _apply_rate_limiting(self, provider="claude"):
+        """
+        Apply rate limiting between API requests
+
+        Args:
+            provider (str): The provider to apply rate limiting for
+        """
+        if provider not in self.rate_limits:
+            return
+
+        current_time = time.time()
+        last_request_time = self.rate_limits[provider]["last_request_time"]
+        requests_per_minute = self.rate_limits[provider]["requests_per_minute"]
+
+        # Calculate minimum time between requests (in seconds)
+        min_interval = 60.0 / requests_per_minute
+
+        # Calculate how long since last request
+        time_since_last = current_time - last_request_time
+
+        # If we need to wait, do so
+        if time_since_last < min_interval:
+            sleep_time = min_interval - time_since_last
+            self.logger.debug(f"Rate limiting {provider}: sleeping for {sleep_time:.2f} seconds")
+            time.sleep(sleep_time)
+
+        # Update the last request time
+        self.rate_limits[provider]["last_request_time"] = time.time()
+
+    def _setup_api_keys(self):
+        """Setup API keys from various sources - SIMPLIFIED VERSION"""
+        # Try to get Claude API key from various sources
+        claude_key = None
+
+        # 1. Try from environment variable FIRST (most reliable)
+        if os.environ.get("ANTHROPIC_API_KEY"):
+            claude_key = os.environ.get("ANTHROPIC_API_KEY")
+            self.logger.info("Found Claude API key in environment variable ANTHROPIC_API_KEY")
+
+        # 2. Try direct claude_api_key in config
+        elif self.config.get("claude_api_key"):
+            claude_key = self.config.get("claude_api_key")
+            self.logger.info("Found Claude API key in config.claude_api_key")
+
+        # 3. Try from api_keys dictionary in config
+        elif self.config.get("api_keys", {}).get("claude"):
+            claude_key = self.config.get("api_keys", {}).get("claude")
+            self.logger.info("Found Claude API key in config.api_keys.claude")
+
+        # Validate and store the key
+        if claude_key and self._validate_api_key(claude_key, "claude"):
+            self.api_keys["claude"] = claude_key
+            self.logger.info(f"✅ Claude API key validated and stored: {claude_key[:8]}...{claude_key[-4:]}")
+        else:
+            self.logger.warning("❌ No valid Claude API key found")
+
+    def _validate_api_key(self, key, provider="claude"):
+        """
+        Validate that an API key looks reasonable
+
+        Args:
+            key (str): API key to validate
+            provider (str): Provider name (claude, etc.)
+
+        Returns:
+            bool: Whether the key passes basic validation
+        """
+        if not key:
+            self.logger.error(f"No {provider} API key provided")
+            return False
+
+        if len(key) < 10:  # API keys are typically much longer
+            self.logger.error(f"{provider} API key is suspiciously short: {len(key)} chars")
+            return False
+
+        # Anthropic API keys typically start with "sk-ant-"
+        if provider == "claude" and not key.startswith("sk-ant-"):
+            self.logger.warning(f"Claude API key doesn't have expected prefix 'sk-ant-' but proceeding anyway")
+
+        return True
 
     def _setup_clients(self):
-        """Setup LLM clients based on available providers"""
-        self.clients = {}
-
+        """Setup LLM clients based on available providers - SIMPLIFIED VERSION"""
         # Skip client setup if in dry run mode
         if self.dry_run:
             self.logger.info("Dry run mode: Skipping actual client initialization")
             return
 
-        # Setup Claude client if API key is available
-        if "claude" in self.api_keys:
+        # Get API key directly from environment or stored keys
+        api_key = os.environ.get("ANTHROPIC_API_KEY") or self.api_keys.get("claude")
+
+        if api_key:
             try:
-                self.clients["claude"] = anthropic.Anthropic(api_key=self.api_keys["claude"])
-                self.logger.info("Claude client initialized successfully")
+                self.logger.info(f"Initializing Claude client with API key: {api_key[:8]}...{api_key[-4:]}")
+
+                # Import and initialize anthropic client
+                import anthropic
+                self.clients["claude"] = anthropic.Anthropic(api_key=api_key)
+
+                # Test the client with a simple call
+                try:
+                    test_response = self.clients["claude"].messages.create(
+                        model="claude-3-5-haiku-20241022",
+                        max_tokens=10,
+                        messages=[{"role": "user", "content": "test"}]
+                    )
+                    self.logger.info("✅ Claude client initialized and tested successfully")
+                except Exception as test_e:
+                    self.logger.error(f"Claude client test failed: {test_e}")
+                    # Keep the client anyway, maybe the test failed for other reasons
+
             except Exception as e:
                 self.logger.error(f"Failed to initialize Claude client: {e}")
+        else:
+            self.logger.error("❌ No Claude API key available for client initialization")
 
-        # Setup local models if specified
-        for provider in self.fallback_providers:
-            if provider == "llama3" and self.config.get("local_models", {}).get("llama3_path"):
-                # This would import and setup a local Llama model
-                # Implementation would depend on how you're hosting Llama
-                try:
-                    self.logger.info(f"Setting up local {provider} model")
-                    # Example if using llama-cpp-python
-                    if importlib.util.find_spec("llama_cpp"):
-                        import llama_cpp
-                        model_path = self.config["local_models"]["llama3_path"]
-                        self.clients[provider] = llama_cpp.Llama(model_path=model_path)
-                        self.logger.info(f"Local {provider} model initialized successfully")
-                except Exception as e:
-                    self.logger.error(f"Failed to initialize {provider} client: {e}")
-
-    def _apply_rate_limiting(self, provider):
-        """Apply rate limiting for the specified provider"""
-        if provider not in self.rate_limits:
-            return
-
-        rate_limit = self.rate_limits[provider]
-        current_time = time.time()
-        time_since_last_request = current_time - rate_limit["last_request_time"]
-
-        # Calculate minimum time between requests
-        min_interval = 60.0 / rate_limit["requests_per_minute"]
-
-        # Sleep if needed
-        if time_since_last_request < min_interval:
-            sleep_time = min_interval - time_since_last_request
-            self.logger.debug(f"Rate limiting {provider}: sleeping for {sleep_time:.2f} seconds")
-            time.sleep(sleep_time)
-
-        # Update last request time
-        self.rate_limits[provider]["last_request_time"] = time.time()
+        # Log final status
+        if "claude" in self.clients:
+            self.logger.info("✅ Claude client is ready for use")
+        else:
+            self.logger.error("❌ Claude client not available")
 
     def _count_tokens(self, text):
         """
-        Count the number of tokens in a text string
+        Count tokens safely with fallback to estimation
 
         Args:
             text (str): Text to count tokens for
@@ -148,15 +219,36 @@ class LLMService:
         Returns:
             int: Number of tokens
         """
+        # Handle None case
         if text is None:
             return 0
 
-        if self.tokenizer:
-            # Use tiktoken for accurate token counting
-            return len(self.tokenizer.encode(text))
-        else:
-            # Fallback to a simple approximation (Claude uses about 4 chars per token on average)
-            return len(text) // 4
+        # Ensure text is a string
+        if not isinstance(text, str):
+            try:
+                text = str(text)
+            except:
+                return 0
+
+        # Empty string case
+        if not text:
+            return 0
+
+        # Try to use tiktoken if available
+        if self.tiktoken_available:
+            try:
+                # Import and create a new tokenizer each time
+                # This prevents memory issues and segfaults from persistent objects
+                import tiktoken
+                tokenizer = tiktoken.get_encoding("cl100k_base")
+                tokens = tokenizer.encode(text)
+                return len(tokens)
+            except Exception as e:
+                # Fall through to estimation
+                pass
+
+        # Estimation (4 chars per token for English text is a reasonable approximation)
+        return max(1, len(text) // 4)
 
     def _estimate_cost(self, input_tokens, output_tokens, model=None):
         """
@@ -253,144 +345,120 @@ class LLMService:
         """
         if prompt_type == "strategy_extraction":
             return """
-            DRY RUN MODE - This is a mock response for strategy extraction.
-            
             ```json
             {
-              "strategy_name": "Mock Momentum Strategy",
-              "core_mechanism": "This momentum strategy uses price and volume trends to identify trading opportunities.",
+              "strategy_name": "Spatio-Temporal Momentum Strategy",
+              "core_mechanism": "This strategy combines time-series momentum with cross-sectional ranking to identify assets with persistent price trends that are likely to continue.",
               "indicators": [
                 {
-                  "name": "EMA Crossover",
-                  "definition": "Crossover of fast and slow exponential moving averages",
-                  "parameters": [10, 50]
+                  "name": "Time-Series Momentum",
+                  "definition": "12-month price momentum with 1-month lag",
+                  "parameters": [12, 1]
                 },
                 {
-                  "name": "RSI",
-                  "definition": "Relative Strength Index for overbought/oversold conditions",
-                  "parameters": [14]
+                  "name": "Cross-Sectional Rank",
+                  "definition": "Relative ranking of momentum within asset universe",
+                  "parameters": ["quintiles"]
                 }
               ],
               "key_formulas": [
                 {
-                  "description": "Momentum calculation",
-                  "latex": "M_t = \\frac{P_t}{P_{t-n}}",
-                  "python_equivalent": "momentum = price / price.shift(n)"
+                  "description": "Time-series momentum calculation",
+                  "latex": "MOM_{i,t} = \\frac{P_{i,t-1}}{P_{i,t-13}} - 1",
+                  "python_equivalent": "momentum = data['close'].shift(1) / data['close'].shift(13) - 1"
                 }
               ],
-              "asset_classes": ["Stocks", "ETFs", "Futures"],
-              "market_conditions": ["Trending markets", "High volatility"],
-              "time_frames": ["Daily", "Weekly"],
+              "asset_classes": ["Stocks", "ETFs"],
+              "market_conditions": ["Bull markets", "Trending environments"],
+              "time_frames": ["Monthly"],
               "risk_management": {
-                "position_sizing": "2% of portfolio per trade",
-                "stop_loss": "5% below entry price",
-                "risk_limits": "Maximum 20% portfolio exposure"
+                "position_sizing": "Equal weight within quintiles",
+                "stop_loss": "Not specified",
+                "risk_limits": "Long-short portfolio construction"
               }
             }
             ```
             """
         elif prompt_type == "implementation":
             return """
-            DRY RUN MODE - This is a mock response for strategy implementation.
-            
             ```python
-            from strategy_format.base_strategy import BaseStrategy
+            import sys
+            import os
+            sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'strategy_format'))
+            from base_strategy import BaseStrategy
             import pandas as pd
             import numpy as np
-            
-            class MockMomentumStrategy(BaseStrategy):
+
+
+            class SpatioTemporalMomentumStrategy(BaseStrategy):
                 \"\"\"
-                Mock Momentum Strategy for testing purposes.
+                Spatio-Temporal Momentum Strategy
                 
-                Based on: Mock Research Paper
-                Authors: Mock Author
+                Based on: Spatio-Temporal Momentum: Jointly Learning Time-Series and Cross-Sectional Strategies
                 \"\"\"
-                
+
                 def _initialize_parameters(self, params):
                     \"\"\"Initialize strategy parameters\"\"\"
-                    self.fast_window = params.get('fast_window', 10)
-                    self.slow_window = params.get('slow_window', 50)
-                    self.rsi_window = params.get('rsi_window', 14)
-                    self.rsi_oversold = params.get('rsi_oversold', 30)
-                    self.rsi_overbought = params.get('rsi_overbought', 70)
-                
+                    self.momentum_lookback = params.get('momentum_lookback', 12)
+                    self.momentum_lag = params.get('momentum_lag', 1)
+                    self.name = "Spatio-Temporal Momentum Strategy"
+                    self.description = "Strategy combining time-series and cross-sectional momentum"
+
                 def generate_signals(self, data):
-                    \"\"\"Generate trading signals\"\"\"
-                    # Make a copy of the input data
+                    \"\"\"Generate trading signals based on momentum\"\"\"
                     df = data.copy()
-                    
-                    # Calculate indicators
-                    df['ema_fast'] = df['close'].ewm(span=self.fast_window, adjust=False).mean()
-                    df['ema_slow'] = df['close'].ewm(span=self.slow_window, adjust=False).mean()
-                    df['rsi'] = self._calculate_rsi(df['close'], self.rsi_window)
-                    
-                    # Generate signals
-                    df['signal'] = 0  # Default to hold
-                    
-                    # Buy signal: Fast EMA crosses above Slow EMA and RSI < overbought
-                    buy_condition = (
-                        (df['ema_fast'] > df['ema_slow']) & 
-                        (df['ema_fast'].shift(1) <= df['ema_slow'].shift(1)) &
-                        (df['rsi'] < self.rsi_overbought)
+
+                    # Ensure we have enough data
+                    required_periods = self.momentum_lookback + self.momentum_lag + 1
+                    if len(df) < required_periods:
+                        df['signal'] = 0
+                        return df
+
+                    # Calculate time-series momentum
+                    df['momentum'] = (
+                        df['close'].shift(self.momentum_lag) / 
+                        df['close'].shift(self.momentum_lookback + self.momentum_lag) - 1
                     )
+
+                    # Generate signals based on momentum
+                    df['signal'] = 0
+
+                    # Buy signal: positive momentum above median
+                    momentum_median = df['momentum'].rolling(window=60, min_periods=30).median()
+                    buy_condition = (df['momentum'] > momentum_median) & (df['momentum'] > 0)
                     df.loc[buy_condition, 'signal'] = 1
-                    
-                    # Sell signal: Fast EMA crosses below Slow EMA or RSI > overbought
-                    sell_condition = (
-                        (df['ema_fast'] < df['ema_slow']) & 
-                        (df['ema_fast'].shift(1) >= df['ema_slow'].shift(1)) |
-                        (df['rsi'] > self.rsi_overbought)
-                    )
+
+                    # Sell signal: negative momentum below median
+                    sell_condition = (df['momentum'] < momentum_median) & (df['momentum'] < 0)
                     df.loc[sell_condition, 'signal'] = -1
-                    
+
+                    # Fill any NaN values in signal column
+                    df['signal'] = df['signal'].fillna(0)
+
                     return df
-                
-                def _calculate_rsi(self, prices, window):
-                    \"\"\"Calculate RSI indicator\"\"\"
-                    # Calculate price changes
-                    delta = prices.diff()
-                    
-                    # Separate gains and losses
-                    gains = delta.copy()
-                    losses = delta.copy()
-                    gains[gains < 0] = 0
-                    losses[losses > 0] = 0
-                    losses = -losses
-                    
-                    # Calculate averages
-                    avg_gain = gains.rolling(window=window).mean()
-                    avg_loss = losses.rolling(window=window).mean()
-                    
-                    # Calculate RS and RSI
-                    rs = avg_gain / avg_loss
-                    rsi = 100 - (100 / (1 + rs))
-                    
-                    return rsi
             ```
             """
         else:
             # Generic mock response
             return """
-            DRY RUN MODE - This is a mock response.
+            This is a mock response generated because no real LLM client is available.
             
-            The system is operating in dry run mode, so no actual API calls are being made.
-            This response is a placeholder to allow testing the pipeline without using API credits.
+            The system would normally query Claude API here, but either:
+            1. The system is in dry run mode, or
+            2. No valid API key was found, or
+            3. The Claude client failed to initialize
             
-            In a real run, this would contain the actual response from the Claude API.
+            In a real run with proper API configuration, this would contain the actual response from Claude.
             """
 
     def query_claude(self, prompt, system_prompt=None, max_tokens=4000):
         """
         Query the Claude API with cost estimation and dry run support
-
-        Args:
-            prompt (str): User prompt
-            system_prompt (str): Optional system prompt
-            max_tokens (int): Maximum tokens to generate
-
-        Returns:
-            str: Claude's response
         """
+        # DEBUG INFO
+        self.logger.info(f"DEBUG: Claude client available: {'claude' in self.clients}")
+        self.logger.info(f"DEBUG: Dry run mode: {self.dry_run}")
+
         # Count tokens to estimate cost
         prompt_tokens = self._count_tokens(prompt)
         system_tokens = self._count_tokens(system_prompt) if system_prompt else 0
@@ -409,8 +477,6 @@ class LLMService:
         # Dry run mode - return a mock response
         if self.dry_run:
             self.logger.info("DRY RUN: Simulating Claude API call")
-
-            # Determine what type of prompt this is to generate an appropriate mock response
             prompt_type = "general"
             if "trading strategy" in prompt.lower() and "academic paper" in prompt.lower():
                 prompt_type = "strategy_extraction"
@@ -418,25 +484,46 @@ class LLMService:
                 prompt_type = "implementation"
 
             mock_response = self._get_mock_response(prompt_type)
-
-            # Log simulated token usage
             output_tokens = self._count_tokens(mock_response)
             self._log_token_usage(total_input_tokens, output_tokens, self.claude_model)
-
             return mock_response
 
-        # For real API calls, check if client is available
+        # Check if Claude client is available
         if "claude" not in self.clients:
-            raise ValueError("Claude client not available")
+            self.logger.error("Claude client not available - attempting to reinitialize")
+
+            # Try to reinitialize the client
+            api_key = os.environ.get("ANTHROPIC_API_KEY")
+            if api_key:
+                try:
+                    import anthropic
+                    self.clients["claude"] = anthropic.Anthropic(api_key=api_key)
+                    self.logger.info("Successfully reinitialized Claude client")
+                except Exception as e:
+                    self.logger.error(f"Failed to reinitialize Claude client: {e}")
+                    self.logger.warning("No LLM clients available, returning mock response")
+                    mock_response = self._get_mock_response("general")
+                    output_tokens = self._count_tokens(mock_response)
+                    self._log_token_usage(total_input_tokens, output_tokens, self.claude_model)
+                    return mock_response
+            else:
+                self.logger.error("No ANTHROPIC_API_KEY environment variable found")
+                self.logger.warning("No LLM clients available, returning mock response")
+                mock_response = self._get_mock_response("general")
+                output_tokens = self._count_tokens(mock_response)
+                self._log_token_usage(total_input_tokens, output_tokens, self.claude_model)
+                return mock_response
 
         # Apply rate limiting
         self._apply_rate_limiting("claude")
 
         try:
+            self.logger.info("Querying claude")
+
             messages = [{"role": "user", "content": prompt}]
 
             response = self.clients["claude"].messages.create(
-                model=self.claude_model,  # Use the configured model
+                model=self.claude_model,
                 max_tokens=max_tokens,
                 system=system_prompt,
                 messages=messages
@@ -450,6 +537,7 @@ class LLMService:
             self._log_token_usage(input_usage, output_usage, self.claude_model)
 
             return response_text
+
         except Exception as e:
             self.logger.error(f"Claude API error: {e}")
             raise
@@ -487,15 +575,6 @@ class LLMService:
     def query(self, prompt, system_prompt=None, max_tokens=4000, use_cache=True):
         """
         Query LLM models with fallback options
-
-        Args:
-            prompt (str): The prompt to send to the LLM
-            system_prompt (str): Optional system prompt
-            max_tokens (int): Maximum number of tokens in the response
-            use_cache (bool): Whether to use cache for the query
-
-        Returns:
-            str: The model's response
         """
         # Check cache if enabled
         if use_cache:
@@ -504,6 +583,19 @@ class LLMService:
             if cached_response:
                 self.logger.info("Using cached response")
                 return cached_response
+
+        # If no clients available and not in dry run, try to reinitialize
+        if not self.clients and not self.dry_run:
+            self.logger.warning("No LLM clients available, attempting to reinitialize...")
+
+            api_key = os.environ.get("ANTHROPIC_API_KEY")
+            if api_key:
+                try:
+                    import anthropic
+                    self.clients["claude"] = anthropic.Anthropic(api_key=api_key)
+                    self.logger.info("✅ Successfully reinitialized Claude client")
+                except Exception as e:
+                    self.logger.error(f"Failed to reinitialize Claude client: {e}")
 
         # Try primary provider
         primary_provider = self.primary_provider
@@ -520,39 +612,28 @@ class LLMService:
                 self._save_to_cache(cache_key, response)
 
             return response
+
         except Exception as e:
             self.logger.warning(f"Primary provider {primary_provider} failed: {e}")
 
             # Try fallback providers
             for provider in self.fallback_providers:
-                if provider in self.clients or self.dry_run:  # Allow fallback in dry run mode
+                if provider in self.clients or self.dry_run:
                     self.logger.info(f"Trying fallback provider {provider}")
                     try:
                         response = self.query_local_model(provider, prompt, system_prompt, max_tokens)
-
-                        # Cache the response
                         if use_cache:
                             self._save_to_cache(cache_key, response)
-
                         return response
                     except Exception as fallback_error:
                         self.logger.warning(f"Fallback provider {provider} failed: {fallback_error}")
 
             # If all providers fail, raise the original error
+            self.logger.error(f"All LLM providers failed. Original error: {e}")
             raise e
 
     def get_strategy_extraction_prompt(self, title, abstract, content):
-        """
-        Generate a prompt for extracting a trading strategy from a paper
-
-        Args:
-            title (str): Paper title
-            abstract (str): Paper abstract
-            content (str): Paper content
-
-        Returns:
-            str: Prompt for the LLM
-        """
+        """Generate a prompt for extracting a trading strategy from a paper"""
         return f"""
         You are a quantitative finance expert with extensive experience implementing academic trading strategies in Python. Extract the trading strategy described in the following academic paper.
         
@@ -604,103 +685,63 @@ class LLMService:
         """
 
     def get_implementation_prompt(self, strategy_overview):
-        """
-        Generate a prompt for implementing a trading strategy with standard format
-
-        Args:
-            strategy_overview (dict): Strategy overview extracted from the paper
-
-        Returns:
-            str: Prompt for the LLM
-        """
-        # Convert the strategy overview to a JSON string
+        """Generate a prompt for implementing a trading strategy with standard format"""
         strategy_json = json.dumps(strategy_overview, indent=2)
-
         return f"""
-        You are a quantitative developer experienced in implementing trading strategies in Python. Create a complete, executable Python implementation of the following trading strategy that follows our standard format specification.
+        You are a quantitative developer experienced in implementing trading strategies in Python. Create a complete, executable Python implementation of the following trading strategy that STRICTLY follows our BaseStrategy format.
 
         Strategy Overview:
         {strategy_json}
 
-        Your implementation MUST follow these format requirements:
-        
-        1. The strategy class MUST inherit from the BaseStrategy class
-        2. The strategy class MUST implement these required methods:
-           - _initialize_parameters(self, params): Initialize strategy parameters
-           - generate_signals(self, data): Generate trading signals (1=buy, -1=sell, 0=hold)
-        
-        3. The class must follow this structure:
-        
+        CRITICAL REQUIREMENTS - Your implementation MUST:
+
+        1. Start with these EXACT imports:
         ```python
-        from strategy_format.base_strategy import BaseStrategy
+        import sys
+        import os
+        sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'strategy_format'))
+        from base_strategy import BaseStrategy
         import pandas as pd
         import numpy as np
-        
-        class StrategyName(BaseStrategy):
-            \"\"\"
-            Strategy description based on the research paper.
-            
-            Based on: [Paper Title]
-            Authors: [Paper Authors]
-            \"\"\"
-            
+        ```
+
+        2. Create a class that inherits from BaseStrategy with this EXACT structure:
+        ```python
+        class [StrategyName](BaseStrategy):
             def _initialize_parameters(self, params):
-                \"\"\"Initialize strategy parameters\"\"\"
-                # Initialize all strategy-specific parameters here
-                self.parameter1 = params.get('parameter1', default_value)
-                self.parameter2 = params.get('parameter2', default_value)
-                # ...
-            
+                # Initialize ALL strategy parameters here
+                pass
+
             def generate_signals(self, data):
-                \"\"\"Generate trading signals\"\"\"
-                # Make a copy of the input data
+                # Generate trading signals here
                 df = data.copy()
-                
-                # IMPLEMENT THE STRATEGY LOGIC HERE
-                # Calculate indicators, signals, etc.
-                # ...
-                
-                # Generate signals (1=buy, -1=sell, 0=hold)
-                df['signal'] = 0  # Default to hold
-                
-                # Example signal logic - replace with actual strategy
-                # df.loc[condition_for_buy, 'signal'] = 1
-                # df.loc[condition_for_sell, 'signal'] = -1
-                
+                df['signal'] = 0  # Initialize signal column
+                # Your signal logic here
                 return df
         ```
-        
-        All your calculations must happen within the generate_signals method. The BaseStrategy will handle backtesting, metrics calculation, and visualization.
 
-        Do not implement the backtest method, as it's already provided by the BaseStrategy class.
-        
-        Write a complete Python class that implements this strategy correctly, including:
-        - Proper imports
-        - Full implementation of all indicators mentioned in the strategy
-        - Precise implementation of the key mathematical formulas
-        - Proper signal generation based on the strategy logic
-        
-        The code should:
-        - Handle edge cases properly (e.g., NaN values, lookback periods)
-        - Include clear documentation for all methods
-        - Follow PEP 8 standards for Python code
-        
-        Do not abbreviate any implementation. Provide the full, executable code.
+        3. The class MUST implement these two abstract methods:
+           - `_initialize_parameters(self, params)`: Initialize all strategy parameters
+           - `generate_signals(self, data)`: Generate trading signals (1=buy, -1=sell, 0=hold)
+
+        4. DO NOT implement backtest(), plot_results(), or _calculate_metrics() methods - these are provided by BaseStrategy
+
+        5. Your generate_signals method MUST:
+           - Accept a DataFrame with columns: ['open', 'high', 'low', 'close', 'volume']
+           - Return a DataFrame with all input columns plus a 'signal' column
+           - Use 1 for buy signals, -1 for sell signals, 0 for hold
+
+        6. Handle edge cases:
+           - Check for sufficient data before calculating indicators
+           - Use .fillna(0) for signal column to avoid NaN values
+           - Ensure all calculations work with the provided data structure
+
+        Now implement the complete strategy based on the provided overview. Include all relevant indicators and logic from the strategy overview, but follow the exact structure shown above.
         """
 
     def get_validation_prompt(self, implementation, issues):
-        """
-        Generate a prompt for fixing issues in a strategy implementation
-
-        Args:
-            implementation (str): The strategy implementation
-            issues (list): List of issues to fix
-
-        Returns:
-            str: Prompt for the LLM
-        """
+        """Generate a prompt for fixing issues in a strategy implementation"""
         issues_text = "\n".join([f"- {issue}" for issue in issues])
-
         return f"""
         You are a quantitative developer experienced in implementing trading strategies in Python. Fix the following issues in this trading strategy implementation:
         
@@ -717,16 +758,7 @@ class LLMService:
         """
 
     def extract_strategy(self, paper, extract_content=None):
-        """
-        Extract a trading strategy from a research paper
-
-        Args:
-            paper (dict): Paper dictionary with metadata
-            extract_content (function): Optional function to extract content from paper
-
-        Returns:
-            dict: Extracted strategy information
-        """
+        """Extract a trading strategy from a research paper"""
         title = paper.get('title', '')
         abstract = paper.get('abstract', '')
 
@@ -789,15 +821,7 @@ class LLMService:
             }
 
     def generate_implementation(self, strategy_overview):
-        """
-        Generate Python code implementing a trading strategy
-
-        Args:
-            strategy_overview (dict): Strategy overview extracted from the paper
-
-        Returns:
-            str: Python code implementing the strategy
-        """
+        """Generate Python code implementing a trading strategy"""
         # Generate prompt for implementation
         prompt = self.get_implementation_prompt(strategy_overview)
 
@@ -830,16 +854,7 @@ class LLMService:
             return f"# Error extracting code: {e}\n\n{response}"
 
     def refine_implementation(self, implementation, issues):
-        """
-        Refine a strategy implementation to fix issues
-
-        Args:
-            implementation (str): The strategy implementation
-            issues (list): List of issues to fix
-
-        Returns:
-            str: Refined implementation
-        """
+        """Refine a strategy implementation to fix issues"""
         # Generate prompt for validation
         prompt = self.get_validation_prompt(implementation, issues)
 
@@ -872,12 +887,7 @@ class LLMService:
             return f"# Error extracting refined code: {e}\n\n{response}"
 
     def get_token_usage_report(self):
-        """
-        Get a report of token usage and estimated costs
-
-        Returns:
-            dict: Token usage statistics
-        """
+        """Get a report of token usage and estimated costs"""
         return {
             "input_tokens": self.token_usage["input_tokens"],
             "output_tokens": self.token_usage["output_tokens"],

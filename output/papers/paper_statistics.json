@@ -1,17 +1,22 @@
 {
   "strategy_counts": {
-    "unknown": 1
+    "unknown": 2,
+    "momentum": 1
   },
   "asset_counts": {
-    "options": 1
+    "options": 1,
+    "equity": 2
   },
   "ml_counts": {
-    "deep_learning": 1
+    "deep_learning": 2,
+    "unknown": 1
   },
   "timeframe_counts": {
-    "position": 1
+    "position": 1,
+    "unknown": 2
   },
   "years": {
-    "2024": 1
+    "2024": 1,
+    "2023": 2
   }
 }

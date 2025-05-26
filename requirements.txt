@@ -10,3 +10,5 @@ lxml
 pyyaml
 anthropic>=0.9.0
 tiktoken
+tensorflow
+scikit-learn
