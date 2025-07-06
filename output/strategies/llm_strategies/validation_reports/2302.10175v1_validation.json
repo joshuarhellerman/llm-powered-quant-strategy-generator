@@ -2,7 +2,7 @@
   "is_valid": false,
   "issues": [
     "Error testing generate_signals method: The truth value of a Series is ambiguous. Use a.empty, a.bool(), a.item(), a.any() or a.all().",
-    "Error testing backtest method: Data missing required columns: ['open']"
+    "Error testing backtest method: Missing required columns: ['open']"
   ],
   "details": {
     "syntax": {
@@ -25,7 +25,7 @@
       "valid": false,
       "issues": [
         "Error testing generate_signals method: The truth value of a Series is ambiguous. Use a.empty, a.bool(), a.item(), a.any() or a.all().",
-        "Error testing backtest method: Data missing required columns: ['open']"
+        "Error testing backtest method: Missing required columns: ['open']"
       ]
     }
   }
